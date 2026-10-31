@@ -1,4 +1,8 @@
 /* eslint-disable linebreak-style */
+/* eslint-disable no-undef */
+
+const _ = window._;
+
 export const COURSES = [
   'Mathematics', 'Physics', 'English', 'Computer Science', 'Dancing', 'Chess',
   'Biology', 'Chemistry', 'Law', 'Art', 'Medicine', 'Statistics',
@@ -7,7 +11,7 @@ export const COURSES = [
 export const generateId = () => `_${Math.random().toString(36).substr(2, 9)}`;
 
 export function formatAndMergeUsers(randomUserMock = [], additionalUsers = []) {
-  const formatUser = (user) => ({
+  const allUsers = _.map([...randomUserMock, ...additionalUsers], (user) => ({
     gender: user.gender ? `${user.gender.charAt(0).toUpperCase()}${user.gender.slice(1)}` : 'Unknown',
     title: user.name?.title || user.title || '',
     full_name: user.full_name || `${user.name?.first || ''} ${user.name?.last || ''}`.trim(),
@@ -15,43 +19,30 @@ export function formatAndMergeUsers(randomUserMock = [], additionalUsers = []) {
     state: user.location?.state || user.state || 'Unknown',
     country: user.location?.country || user.country || 'Unknown',
     postcode: user.location?.postcode || user.postcode || '',
-    coordinates: user.location?.coordinates || user.coordinates || { latitude: '', longitude: '' },
+    coordinates: user.location?.coordinates || user.coordinates || { latitude: '48.3794', longitude: '31.1656' },
     timezone: user.location?.timezone || user.timezone || { offset: '', description: '' },
     email: user.email || '',
-    b_date: user.dob?.date || user.b_date || '',
-    age: user.dob?.age || user.age || null,
+    b_date: user.dob?.date || user.b_date || '1990-01-01T00:00:00.000Z',
+    age: user.dob?.age || user.age || 30,
     phone: user.phone || '',
     picture_large: user.picture?.large || user.picture_large || '',
     picture_thumbnail: user.picture?.thumbnail || user.picture_thumbnail || '',
     id: user.id?.value || user.id || generateId(),
-    favorite: user.favorite !== undefined ? user.favorite : false,
-    course: user.course || COURSES[Math.floor(Math.random() * COURSES.length)],
+    favorite: _.defaultTo(user.favorite, false),
+    course: user.course || _.sample(COURSES),
     bg_color: user.bg_color || '#ffffff',
     note: user.note || 'No notes',
-  });
+  }));
 
-  const allUsers = [...randomUserMock, ...additionalUsers].map(formatUser);
-  const uniqueUsers = [];
-  const seenEmails = new Set();
-
-  allUsers.forEach((user) => {
-    if (user.email && !seenEmails.has(user.email)) {
-      seenEmails.add(user.email);
-      uniqueUsers.push(user);
-    } else if (!user.email) {
-      uniqueUsers.push(user);
-    }
-  });
-
-  return uniqueUsers;
+  return _.uniqBy(allUsers, 'email');
 }
 
 export function validateUser(user) {
   const isCapitalizedString = (str) => typeof str === 'string' && /^[A-ZА-ЯІЇЄҐ]/.test(str);
   const stringFields = ['full_name', 'gender', 'note', 'state', 'city', 'country'];
 
-  const hasInvalidField = stringFields.some((field) => !isCapitalizedString(user[field]));
-  if (hasInvalidField) return false;
+  const isValidStrings = _.every(stringFields, (field) => isCapitalizedString(user[field]));
+  if (!isValidStrings) return false;
 
   if (typeof user.age !== 'number' || Number.isNaN(user.age)) return false;
 
@@ -64,46 +55,24 @@ export function validateUser(user) {
 }
 
 export function filterUsers(users, filters = {}) {
-  return users.filter((user) => {
-    let isMatch = true;
-    if (filters.country !== undefined && user.country !== filters.country) isMatch = false;
-    if (filters.age !== undefined && user.age !== filters.age) isMatch = false;
-    if (filters.gender !== undefined && user.gender !== filters.gender) isMatch = false;
-    if (filters.favorite !== undefined && user.favorite !== filters.favorite) isMatch = false;
-    return isMatch;
-  });
+  const activeFilters = _.omitBy(filters, (val) => val === undefined || val === 'All' || val === '');
+  return _.filter(users, _.matches(activeFilters));
 }
 
 export function sortUsers(users, sortBy, order = 'asc') {
-  return [...users].sort((a, b) => {
-    let valA = a[sortBy];
-    let valB = b[sortBy];
-
-    if (sortBy === 'b_day' || sortBy === 'b_date') {
-      valA = new Date(a.b_date).getTime();
-      valB = new Date(b.b_date).getTime();
-    }
-
-    if (typeof valA === 'string' && typeof valB === 'string') {
-      return order === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-    }
-
-    if (valA < valB) return order === 'asc' ? -1 : 1;
-    if (valA > valB) return order === 'asc' ? 1 : -1;
-    return 0;
-  });
+  if (sortBy === 'b_day' || sortBy === 'b_date') {
+    return _.orderBy(users, [(u) => new Date(u.b_date).getTime()], [order]);
+  }
+  return _.orderBy(users, [sortBy], [order]);
 }
 
 export function findUser(users, searchParam) {
-  const [key, value] = Object.entries(searchParam)[0];
-  return users.find((user) => {
-    if (key === 'name' && user.full_name) {
-      return user.full_name.toLowerCase().includes(value.toLowerCase());
-    }
-    if (key === 'note' && user.note) {
-      return user.note.toLowerCase().includes(value.toLowerCase());
-    }
-    if (key === 'age') return user.age === value;
-    return user[key] === value;
-  });
-} 
+  const [key, value] = _.toPairs(searchParam)[0];
+  if (key === 'name') {
+    return _.find(users, (u) => _.includes(_.toLower(u.full_name), _.toLower(value)));
+  }
+  if (key === 'note') {
+    return _.find(users, (u) => _.includes(_.toLower(u.note), _.toLower(value)));
+  }
+  return _.find(users, { [key]: value });
+}

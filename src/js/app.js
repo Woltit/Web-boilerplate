@@ -3,6 +3,7 @@
 /* eslint-disable no-param-reassign */
 /* eslint-disable no-alert */
 /* eslint-disable no-use-before-define */
+/* eslint-disable no-undef */
 
 import {
   formatAndMergeUsers,
@@ -11,38 +12,76 @@ import {
   filterUsers,
 } from './test-module.js';
 
+window.addEventListener('unhandledrejection', (event) => {
+  if (event.reason && event.reason.message && event.reason.message.includes('exitFullscreen')) {
+    event.preventDefault();
+  }
+});
+
 let teachers = [];
 let filteredTeachers = [];
+let pieChartInstance = null;
+let mapInstance = null;
 const currentSort = { field: null, asc: true };
 
+function getDaysUntilBirthday(bDateStr) {
+  if (!bDateStr) return 'N/A';
+  const today = dayjs();
+  const bDay = dayjs(bDateStr);
+  
+  let nextBday = dayjs().month(bDay.month()).date(bDay.date());
+
+  if (nextBday.isBefore(today, 'day')) {
+    nextBday = nextBday.add(1, 'year');
+  }
+
+  return nextBday.diff(today, 'day');
+}
 function initFiltersDropdowns() {
   const regionSelect = document.querySelector('#filter-region');
   const uniqueCountries = [...new Set(teachers.map((t) => t.country))].sort();
-  regionSelect.innerHTML = `<option value="All">All Regions</option>${uniqueCountries.map((c) => `<option value="${c}">${c}</option>`).join('')}`;
+  regionSelect.innerHTML = '<option value=\'All\'>All Regions</option>'
+    + `${uniqueCountries.map((c) => `<option value="${c}">${c}</option>`).join('')}`;
 }
 
 function renderStatistics(list) {
-  // Завдання 2: Статистика оновлюється автоматично, бо вона рендериться з відфільтрованого масиву
-  const tbody = document.querySelector('.stats-table tbody');
-  tbody.innerHTML = '';
-  list.forEach((teacher) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${teacher.full_name}</td><td>${teacher.course}</td><td>${teacher.age}</td><td>${teacher.gender}</td><td>${teacher.country}</td>`;
-    tbody.appendChild(tr);
+  const tableWrapper = document.querySelector('.table-wrapper');
+
+  let canvas = document.querySelector('#stats-chart');
+  if (!canvas) {
+    tableWrapper.innerHTML = '<canvas id="stats-chart" style="max-height: 350px;"></canvas>';
+    canvas = document.querySelector('#stats-chart');
+  }
+
+  const statsCounts = {};
+  list.forEach((t) => {
+    statsCounts[t.course] = (statsCounts[t.course] || 0) + 1;
   });
-}
 
-function sortStatsTable(field, thElement) {
-  currentSort.asc = (currentSort.field === field) ? !currentSort.asc : true;
-  currentSort.field = field;
+  const labels = Object.keys(statsCounts);
+  const data = Object.values(statsCounts);
 
-  document.querySelectorAll('.stats-table th').forEach((th) => {
-    th.innerHTML = th.innerHTML.replace(' ↓', '').replace(' ↑', '');
+  if (pieChartInstance) {
+    pieChartInstance.destroy();
+  }
+
+  pieChartInstance = new Chart(canvas, {
+    type: 'pie',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: [
+          '#f56a6a', '#3fbbc0', '#ffbb33', '#00C851', '#33b5e5',
+          '#aa66cc', '#2bbbad', '#4285F4', '#ff4444', '#0d47a1', '#9933CC',
+        ],
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+    },
   });
-  thElement.innerHTML += currentSort.asc ? ' ↓' : ' ↑';
-
-  filteredTeachers = sortUsers(filteredTeachers, field, currentSort.asc ? 'asc' : 'desc');
-  renderStatistics(filteredTeachers);
 }
 
 function renderTeachersGrid(list) {
@@ -97,6 +136,19 @@ function renderFavorites(list) {
   });
 }
 
+function sortStatsTable(field, thElement) {
+  currentSort.asc = (currentSort.field === field) ? !currentSort.asc : true;
+  currentSort.field = field;
+
+  document.querySelectorAll('.stats-table th').forEach((th) => {
+    th.innerHTML = th.innerHTML.replace(' ↓', '').replace(' ↑', '');
+  });
+  thElement.innerHTML += currentSort.asc ? ' ↓' : ' ↑';
+
+  filteredTeachers = sortUsers(filteredTeachers, field, currentSort.asc ? 'asc' : 'desc');
+  renderStatistics(filteredTeachers);
+}
+
 function renderAll() {
   renderTeachersGrid(filteredTeachers);
   renderStatistics(filteredTeachers);
@@ -149,9 +201,11 @@ function openTeacherInfoModal(teacher) {
   modal.querySelector('h2').textContent = teacher.full_name;
   modal.querySelector('.subject-highlight').textContent = teacher.course;
 
+  const daysToBday = getDaysUntilBirthday(teacher.b_date);
+
   const meta = modal.querySelectorAll('.meta-line');
   meta[0].textContent = `${teacher.city}, ${teacher.country}`;
-  meta[1].textContent = `${teacher.age}, ${teacher.gender}`;
+  meta[1].textContent = `${teacher.age} years, ${teacher.gender} | 🎉 Days to bday: ${daysToBday}`;
   meta[2].innerHTML = `<a href="mailto:${teacher.email}" class="link-sky">${teacher.email}</a>`;
   meta[3].textContent = teacher.phone;
   modal.querySelector('.teacher-bio p').textContent = teacher.note;
@@ -174,21 +228,97 @@ function openTeacherInfoModal(teacher) {
   };
 
   window.location.hash = 'modal-teacher-info';
+
+  const toggleMapBtn = modal.querySelector('.toggle-map');
+  let mapContainer = modal.querySelector('#teacher-map');
+
+  if (!mapContainer) {
+    mapContainer = document.createElement('div');
+    mapContainer.id = 'teacher-map';
+    mapContainer.style.height = '200px';
+    mapContainer.style.marginTop = '15px';
+    mapContainer.style.display = 'none';
+    modal.querySelector('.teacher-bio').appendChild(mapContainer);
+  }
+
+  toggleMapBtn.onclick = () => {
+    if (mapContainer.style.display === 'none') {
+      mapContainer.style.display = 'block';
+      if (!mapInstance) {
+        const lat = parseFloat(teacher.coordinates?.latitude) || 48.3794;
+        const lon = parseFloat(teacher.coordinates?.longitude) || 31.1656;
+        mapInstance = L.map('teacher-map').setView([lat, lon], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+        }).addTo(mapInstance);
+        L.marker([lat, lon]).addTo(mapInstance).bindPopup(teacher.full_name).openPopup();
+      } else {
+        const lat = parseFloat(teacher.coordinates?.latitude) || 48.3794;
+        const lon = parseFloat(teacher.coordinates?.longitude) || 31.1656;
+        mapInstance.setView([lat, lon], 13);
+        mapInstance.invalidateSize();
+      }
+    } else {
+      mapContainer.style.display = 'none';
+    }
+  };
+}
+
+function initWebDataRocks() {
+  const container = document.querySelector('.table-wrapper');
+  if (!container) return;
+
+  if (typeof WebDataRocks === 'undefined') {
+    window.console.warn('WebDataRocks ще не завантажився');
+    return;
+  }
+
+  container.innerHTML = '<div id="wdr-component"></div>';
+
+  const flatData = teachers.map((t) => ({
+    'Full Name': t.full_name,
+    Speciality: t.course,
+    Age: t.age,
+    Gender: t.gender,
+    Country: t.country,
+    City: t.city,
+    Email: t.email,
+  }));
+
+  window.WebDataRocksInstance = new WebDataRocks({
+    container: '#wdr-component',
+    toolbar: true,
+    report: {
+      dataSource: {
+        data: flatData,
+      },
+      slice: {
+        rows: [
+          { uniqueName: 'Country' },
+          { uniqueName: 'Full Name' },
+        ],
+        columns: [
+          { uniqueName: 'Speciality' },
+        ],
+        measures: [
+          { uniqueName: 'Age', aggregation: 'average' },
+        ],
+      },
+    },
+  });
 }
 
 async function loadTeachers(count = 50) {
   try {
     const response = await fetch(`https://randomuser.me/api/?results=${count}`);
     const data = await response.json();
-    
     const newTeachers = formatAndMergeUsers(data.results, []);
-    
     teachers = [...teachers, ...newTeachers];
-    
     initFiltersDropdowns();
     applyFiltersAndSearch();
+    initWebDataRocks();
   } catch (error) {
-    console.error('Помилка при завантаженні користувачів:', error);
+    window.console.error('Помилка при завантаженні користувачів:', error);
   }
 }
 
@@ -207,7 +337,8 @@ async function handleAddTeacher(e) {
     email: form.querySelector('input[type="email"]').value,
     phone: form.querySelector('input[type="tel"]').value,
     b_date: form.querySelector('input[type="date"]').value,
-    age: parseInt(new Date().getFullYear() - new Date(form.querySelector('input[type="date"]').value).getFullYear(), 10) || 30,
+    age: parseInt(new Date().getFullYear()
+      - new Date(form.querySelector('input[type="date"]').value).getFullYear(), 10) || 30,
     gender: capitalize(form.querySelector('input[name="sex"]:checked').value),
     note: capitalize(form.querySelector('textarea').value || 'New note'),
     favorite: false,
@@ -229,22 +360,24 @@ async function handleAddTeacher(e) {
     });
 
     if (!response.ok) throw new Error('Network response was not ok');
-    console.log('Дані успішно відправлено на сервер!');
   } catch (error) {
-    console.warn('Сервер не працює. Дані збережено лише локально.', error);
+    window.console.warn('Сервер не працює. Дані збережено лише локально.', error);
   }
 
   teachers.unshift(newTeacher);
   initFiltersDropdowns();
   applyFiltersAndSearch();
+  initWebDataRocks();
   form.reset();
   window.location.hash = '';
 }
 
 function setupEventListeners() {
-  document.querySelectorAll('.modal-overlay, .modal-close-btn').forEach((el) => el.addEventListener('click', (e) => {
-    if (e.target === el) window.location.hash = '';
-  }));
+  document.querySelectorAll('.modal-overlay, .modal-close-btn').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      if (e.target === el) window.location.hash = '';
+    });
+  });
 
   ['#filter-age', '#filter-region', '#filter-sex', '#photo-only', '#fav-only'].forEach((id) => {
     document.querySelector(id).addEventListener('change', applyFiltersAndSearch);
@@ -252,6 +385,31 @@ function setupEventListeners() {
 
   document.querySelector('.btn-search').addEventListener('click', applyFiltersAndSearch);
   document.querySelector('.search-input').addEventListener('input', applyFiltersAndSearch);
+
+  // Навігаційні кнопки шапки сайту (Teachers, Statistics, Favorites, About)
+  document.querySelectorAll('a, button').forEach((el) => {
+    const text = el.textContent.trim().toLowerCase();
+    if (['teachers', 'statistics', 'favorites', 'about'].includes(text)) {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+
+        const targetId = text === 'favorites' ? 'favorites' : text;
+        const targetElement = document.getElementById(targetId)
+          || document.querySelector(`.${targetId}`)
+          || document.querySelector(`[data-section="${targetId}"]`);
+
+        if (targetElement) {
+          targetElement.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        if (text === 'statistics') {
+          setTimeout(() => {
+            renderStatistics(filteredTeachers);
+          }, 50);
+        }
+      });
+    }
+  });
 
   const headers = document.querySelectorAll('.stats-table th');
   const fields = ['full_name', 'course', 'age', 'gender', 'country'];
@@ -266,7 +424,7 @@ function setupEventListeners() {
   if (paginationContainer) {
     paginationContainer.innerHTML = '<a href="javascript:void(0)" class="btn btn-outline" id="load-more" style="width:auto; padding: 5px 20px; display:inline-block; text-decoration:none;">Load 10 more</a>';
     document.querySelector('#load-more').addEventListener('click', () => {
-      loadTeachers(10); 
+      loadTeachers(10);
     });
   }
 }
