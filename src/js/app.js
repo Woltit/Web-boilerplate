@@ -4,58 +4,45 @@
 /* eslint-disable no-alert */
 /* eslint-disable no-use-before-define */
 
-import { formatAndMergeUsers, validateUser, sortUsers, filterUsers } from './test-module.js';
+import {
+  formatAndMergeUsers,
+  validateUser,
+  sortUsers,
+  filterUsers,
+} from './test-module.js';
 
-const rawMockData = [
-  {
-    full_name: 'Ihor Tkachuk', course: 'Chemistry', country: 'Ukraine', city: 'Kyiv', state: 'Kyiv', age: 35, gender: 'Male', picture_large: './images/teacher-1.jpg', email: 'ihor_tkachuk@domain.com', phone: '+380964993252', note: 'Great teacher', favorite: true,
-  },
-  {
-    full_name: 'Pragg Ramesh', course: 'Chess', country: 'India', city: 'Mumbai', state: 'Maharashtra', age: 24, gender: 'Male', picture_large: './images/teacher-2.jpg', email: 'pragg@domain.com', phone: '+911234567890', note: 'Grandmaster', favorite: false,
-  },
-  {
-    full_name: 'Floor Jansen', course: 'Vocal', country: 'Denmark', city: 'Copenhagen', state: 'Capital', age: 41, gender: 'Female', picture_large: './images/teacher-3.jpg', email: 'floor@domain.com', phone: '+4512345678', note: 'Symphonic singer', favorite: true,
-  },
-  {
-    full_name: 'John Burke', course: 'Computer Science', country: 'Belgium', city: 'Brussels', state: 'Brussels', age: 37, gender: 'Male', picture_large: './images/teacher-4.jpg', email: 'john@domain.com', phone: '+3212345678', note: 'Tech enthusiast', favorite: false,
-  },
-];
-
-const teachers = formatAndMergeUsers(rawMockData, []);
-let filteredTeachers = [...teachers];
+let teachers = [];
+let filteredTeachers = [];
 const currentSort = { field: null, asc: true };
 
+function initFiltersDropdowns() {
+  const regionSelect = document.querySelector('#filter-region');
+  const uniqueCountries = [...new Set(teachers.map((t) => t.country))].sort();
+  regionSelect.innerHTML = `<option value="All">All Regions</option>${uniqueCountries.map((c) => `<option value="${c}">${c}</option>`).join('')}`;
+}
 
-function openTeacherInfoModal(teacher) {
-  const modal = document.querySelector('#modal-teacher-info');
-  modal.querySelector('h2').textContent = teacher.full_name;
-  modal.querySelector('.subject-highlight').textContent = teacher.course;
+function renderStatistics(list) {
+  // Завдання 2: Статистика оновлюється автоматично, бо вона рендериться з відфільтрованого масиву
+  const tbody = document.querySelector('.stats-table tbody');
+  tbody.innerHTML = '';
+  list.forEach((teacher) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${teacher.full_name}</td><td>${teacher.course}</td><td>${teacher.age}</td><td>${teacher.gender}</td><td>${teacher.country}</td>`;
+    tbody.appendChild(tr);
+  });
+}
 
-  const meta = modal.querySelectorAll('.meta-line');
-  meta[0].textContent = `${teacher.city}, ${teacher.country}`;
-  meta[1].textContent = `${teacher.age}, ${teacher.gender}`;
-  meta[2].innerHTML = `<a href="mailto:${teacher.email}" class="link-sky">${teacher.email}</a>`;
-  meta[3].textContent = teacher.phone;
-  modal.querySelector('.teacher-bio p').textContent = teacher.note;
+function sortStatsTable(field, thElement) {
+  currentSort.asc = (currentSort.field === field) ? !currentSort.asc : true;
+  currentSort.field = field;
 
-  const photo = modal.querySelector('.teacher-photo-float');
-  if (teacher.picture_large) {
-    photo.innerHTML = `<img src="${teacher.picture_large}" alt="${teacher.full_name}">`;
-  } else {
-    const initials = teacher.full_name.split(' ').map((n) => n[0]).join('.');
-    photo.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#eee;border-radius:50%;font-size:2rem">${initials}</div>`;
-  }
+  document.querySelectorAll('.stats-table th').forEach((th) => {
+    th.innerHTML = th.innerHTML.replace(' ↓', '').replace(' ↑', '');
+  });
+  thElement.innerHTML += currentSort.asc ? ' ↓' : ' ↑';
 
-  const starBtn = modal.querySelector('.star-outline');
-  starBtn.innerHTML = teacher.favorite ? '★' : '☆';
-  starBtn.style.color = teacher.favorite ? '#f56a6a' : '#000';
-  starBtn.onclick = () => {
-    teacher.favorite = !teacher.favorite;
-    applyFiltersAndSearch();
-    openTeacherInfoModal(teacher);
-  };
-
-  window.location.hash = 'modal-teacher-info';
+  filteredTeachers = sortUsers(filteredTeachers, field, currentSort.asc ? 'asc' : 'desc');
+  renderStatistics(filteredTeachers);
 }
 
 function renderTeachersGrid(list) {
@@ -89,16 +76,6 @@ function renderTeachersGrid(list) {
   });
 }
 
-function renderStatistics(list) {
-  const tbody = document.querySelector('.stats-table tbody');
-  tbody.innerHTML = '';
-  list.forEach((teacher) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${teacher.full_name}</td><td>${teacher.course}</td><td>${teacher.age}</td><td>${teacher.gender}</td><td>${teacher.country}</td>`;
-    tbody.appendChild(tr);
-  });
-}
-
 function renderFavorites(list) {
   const track = document.querySelector('.carousel-track');
   if (!track) return;
@@ -118,19 +95,6 @@ function renderFavorites(list) {
     card.addEventListener('click', () => openTeacherInfoModal(teacher));
     track.appendChild(card);
   });
-}
-
-function sortStatsTable(field, thElement) {
-  currentSort.asc = (currentSort.field === field) ? !currentSort.asc : true;
-  currentSort.field = field;
-
-  document.querySelectorAll('.stats-table th').forEach((th) => {
-    th.innerHTML = th.innerHTML.replace(' ↓', '').replace(' ↑', '');
-  });
-  thElement.innerHTML += currentSort.asc ? ' ↓' : ' ↑';
-
-  filteredTeachers = sortUsers(filteredTeachers, field, currentSort.asc ? 'asc' : 'desc');
-  renderStatistics(filteredTeachers);
 }
 
 function renderAll() {
@@ -180,13 +144,55 @@ function applyFiltersAndSearch() {
   renderAll();
 }
 
-function initFiltersDropdowns() {
-  const regionSelect = document.querySelector('#filter-region');
-  const uniqueCountries = [...new Set(teachers.map((t) => t.country))].sort();
-  regionSelect.innerHTML = `<option value="All">All Regions</option>${uniqueCountries.map((c) => `<option value="${c}">${c}</option>`).join('')}`;
+function openTeacherInfoModal(teacher) {
+  const modal = document.querySelector('#modal-teacher-info');
+  modal.querySelector('h2').textContent = teacher.full_name;
+  modal.querySelector('.subject-highlight').textContent = teacher.course;
+
+  const meta = modal.querySelectorAll('.meta-line');
+  meta[0].textContent = `${teacher.city}, ${teacher.country}`;
+  meta[1].textContent = `${teacher.age}, ${teacher.gender}`;
+  meta[2].innerHTML = `<a href="mailto:${teacher.email}" class="link-sky">${teacher.email}</a>`;
+  meta[3].textContent = teacher.phone;
+  modal.querySelector('.teacher-bio p').textContent = teacher.note;
+
+  const photo = modal.querySelector('.teacher-photo-float');
+  if (teacher.picture_large) {
+    photo.innerHTML = `<img src="${teacher.picture_large}" alt="${teacher.full_name}">`;
+  } else {
+    const initials = teacher.full_name.split(' ').map((n) => n[0]).join('.');
+    photo.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#eee;border-radius:50%;font-size:2rem">${initials}</div>`;
+  }
+
+  const starBtn = modal.querySelector('.star-outline');
+  starBtn.innerHTML = teacher.favorite ? '★' : '☆';
+  starBtn.style.color = teacher.favorite ? '#f56a6a' : '#000';
+  starBtn.onclick = () => {
+    teacher.favorite = !teacher.favorite;
+    applyFiltersAndSearch();
+    openTeacherInfoModal(teacher);
+  };
+
+  window.location.hash = 'modal-teacher-info';
 }
 
-function handleAddTeacher(e) {
+async function loadTeachers(count = 50) {
+  try {
+    const response = await fetch(`https://randomuser.me/api/?results=${count}`);
+    const data = await response.json();
+    
+    const newTeachers = formatAndMergeUsers(data.results, []);
+    
+    teachers = [...teachers, ...newTeachers];
+    
+    initFiltersDropdowns();
+    applyFiltersAndSearch();
+  } catch (error) {
+    console.error('Помилка при завантаженні користувачів:', error);
+  }
+}
+
+async function handleAddTeacher(e) {
   e.preventDefault();
   const form = e.target;
   const capitalize = (s) => (s ? `${s.charAt(0).toUpperCase()}${s.slice(1)}` : 'Unknown');
@@ -211,6 +217,21 @@ function handleAddTeacher(e) {
   if (!validateUser(newTeacher)) {
     window.alert('Помилка валідації! Перевірте правильність заповнення полів.');
     return;
+  }
+
+  try {
+    const response = await fetch('http://localhost:3000/teachers', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(newTeacher),
+    });
+
+    if (!response.ok) throw new Error('Network response was not ok');
+    console.log('Дані успішно відправлено на сервер!');
+  } catch (error) {
+    console.warn('Сервер не працює. Дані збережено лише локально.', error);
   }
 
   teachers.unshift(newTeacher);
@@ -240,11 +261,17 @@ function setupEventListeners() {
   });
 
   document.querySelector('.form-add-teacher').addEventListener('submit', handleAddTeacher);
+
+  const paginationContainer = document.querySelector('.pagination');
+  if (paginationContainer) {
+    paginationContainer.innerHTML = '<a href="javascript:void(0)" class="btn btn-outline" id="load-more" style="width:auto; padding: 5px 20px; display:inline-block; text-decoration:none;">Load 10 more</a>';
+    document.querySelector('#load-more').addEventListener('click', () => {
+      loadTeachers(10); 
+    });
+  }
 }
 
-
 document.addEventListener('DOMContentLoaded', () => {
-  initFiltersDropdowns();
-  renderAll();
+  loadTeachers(50);
   setupEventListeners();
 });
